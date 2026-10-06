@@ -104,7 +104,10 @@ export default function PaymentPage() {
 
       const res = await fetch(`${API_URL}/api/campaigns/finalize`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("cf_backend_token") || ""}`,
+        },
         body: JSON.stringify({
           creator_id: user.id,
           campaign_id: d.campaign_id,

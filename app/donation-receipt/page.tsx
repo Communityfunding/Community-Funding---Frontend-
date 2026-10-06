@@ -10,7 +10,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 type Donation = {
-  donation_id: number;
+  donation_id: string;
   campaign_id: number;
   campaign_title?: string;
   campaign_url?: string;

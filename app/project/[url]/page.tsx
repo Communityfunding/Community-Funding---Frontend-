@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useParams, useRouter } from "next/navigation";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -370,6 +370,7 @@ export default function ProjectDetail() {
   const [reportSuccess, setReportSuccess] = useState(false);
 
   const { user } = useUser();
+  const { getToken } = useAuth();
   // v100_t25_report_button — submit report handler
   const submitReport = async () => {
     if (!user) {
@@ -469,23 +470,12 @@ export default function ProjectDetail() {
     setDonateLoading(true);
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const token = typeof window !== "undefined" ? localStorage.getItem("cf_backend_token") : null;
+      const token = user ? await getToken() : null;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
 
 
-      // v100_signin_guard — sign-in required for donations
-
-
-      if (!user) {
-
-
-        window.location.href = "/sign-in?redirect_url=" + encodeURIComponent(window.location.pathname);
-
-
-        return;
-
-
-      }
+      // Guest contributions remain supported; signed-in donors use a verified Clerk token.
+      if (user && !token) throw new Error("Your session expired. Please sign in again.");
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch(`${API_BASE}/api/donations-v2/create-checkout-session`, {
