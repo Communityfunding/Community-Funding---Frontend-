@@ -25,9 +25,14 @@ export type ClerkLikeUser = {
 /** POST /api/auth/clerk-sync — stores cf_backend_token for API calls. */
 export async function syncClerkToBackendToken(user: ClerkLikeUser): Promise<boolean> {
   try {
+    const clerk = (window as Window & {
+      Clerk?: { session?: { getToken: () => Promise<string | null> } | null };
+    }).Clerk;
+    const clerkToken = await clerk?.session?.getToken();
+    if (!clerkToken) return false;
     const res = await fetch(`${API_URL}/api/auth/clerk-sync`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${clerkToken}` },
       body: JSON.stringify({
         clerk_id: user.id,
         email: user.primaryEmailAddress?.emailAddress,
