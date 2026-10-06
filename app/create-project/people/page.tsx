@@ -339,7 +339,7 @@ export default function PeoplePage() {
         {/* Save & Continue */}
         <div className="mt-12 flex justify-between items-center gap-4 flex-wrap">
           <Link
-            href="/create-project/story"
+            href={`/create-project/story${useCampaignDraft.getState().draft.campaign_id ? `?draft=${useCampaignDraft.getState().draft.campaign_id}` : ""}`}
             className="text-gray-500 px-8 py-3 rounded-full font-medium border border-gray-300 hover:bg-gray-50 transition-colors"
           >
             Back
