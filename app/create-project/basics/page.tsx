@@ -144,16 +144,11 @@ export default function BasicsPage() {
     setSaveError(null);
     setSaving(true);
     try {
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("cf_backend_token")
-          : null;
-      if (!token) {
-        setSaveError("Sign in and wait a moment for account sync, then try again.");
-        return;
-      }
-
       const campaignId = await saveDraftToBackend(user ?? undefined);
+      // Saving may refresh an expired backend session. Use the refreshed
+      // token for both uploads and photo metadata instead of a stale copy.
+      const token = localStorage.getItem("cf_backend_token");
+      if (!token) throw new Error("Could not establish a session with the server.");
 
       const stored = useCampaignDraft.getState().draft;
       const uploaded =
