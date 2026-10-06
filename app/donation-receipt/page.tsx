@@ -40,6 +40,7 @@ function _DonationReceiptInner() {
   const params = useSearchParams();
   const router = useRouter();
   const donationId = params.get("donation_id");
+  const sessionId = params.get("session_id");
 
   const [donation, setDonation] = useState<Donation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,8 +56,11 @@ function _DonationReceiptInner() {
     let cancelled = false;
     (async () => {
       try {
+        const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+        const token = localStorage.getItem("cf_backend_token");
         const res = await fetch(
-          `${API_URL}/api/donations-v2/donation/${donationId}`
+          `${API_URL}/api/donations-v2/donation/${encodeURIComponent(donationId)}${query}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -71,7 +75,7 @@ function _DonationReceiptInner() {
     return () => {
       cancelled = true;
     };
-  }, [donationId]);
+  }, [donationId, sessionId]);
 
   // Auto-redirect to home after 15s
   useEffect(() => {
