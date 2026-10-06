@@ -236,168 +236,48 @@ function SiteAdminContent() {
 /* =================================================================== */
 
 function AuthScreen({
-  view, onSwitch, onAuthed,
+  onAuthed,
 }: {
   view: "login" | "register";
   onSwitch: (v: "login" | "register") => void;
   onAuthed: (id: number, name: string) => void;
 }) {
+  const { isSignedIn, isLoaded } = useAuth();
   const fetch = useSiteAdminFetch();
-  const [code, setCode] = useState("");
-  const [fn, setFn] = useState("");
-  const [ln, setLn] = useState("");
   const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
-
   const submit = async () => {
-    setErr(""); setMsg("");
-    if (view === "register") {
-      setErr("Public administrator registration is disabled. Contact the project owner for access.");
-      return;
-    }
-    const formatError = (d: any): string => {
-      if (!d) return "Authentication failed";
-      if (typeof d === "string") return d;
-      // Pydantic 422 — d.detail is array of error objects
-      if (Array.isArray(d.detail)) {
-        return d.detail
-          .map((e: any) =>
-            typeof e === "string"
-              ? e
-              : e?.msg
-                ? `${e.msg}${e.loc ? ` (${e.loc.join(".")})` : ""}`
-                : JSON.stringify(e)
-          )
-          .join("; ");
-      }
-      if (typeof d.detail === "string") return d.detail;
-      if (d.detail) return JSON.stringify(d.detail);
-      if (d.message) return String(d.message);
-      return "Authentication failed";
-    };
-    
-    if (!code || !fn || !ln) { setErr("All fields are required."); return; }
+    setErr("");
     setLoading(true);
     try {
-      const r = await fetch(`${API}/api/site-admin/${view}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: code, first_name: fn, last_name: ln }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setErr(formatError(d)); return; }
-      onAuthed(d.admin_id, d.name);
-    } catch { setErr("Network error — is the backend running?"); }
-    finally { setLoading(false); }
+      const response = await fetch(`${API}/api/site-admin/login`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        setErr(typeof data.detail === "string" ? data.detail : "Administrator access could not be verified.");
+        return;
+      }
+      onAuthed(data.admin_id, data.name);
+    } catch {
+      setErr("Administrator sign-in failed. Please sign in to Community Fundings and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-
   return (
-    <div className="cf-admin min-h-screen flex items-center justify-center p-8" style={{
-      background: "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(0,113,227,0.08), transparent 70%), #f5f5f7",
-    }}>
-      <div className="w-full max-w-[420px] cf-pop">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm mb-8 transition-colors" style={{ color: C.text2 }}>
-          <span style={{ fontSize: 18 }}>‹</span> Back to site
-        </Link>
-
-        <div
-          className="relative"
-          style={{
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            borderRadius: 20,
-            padding: 40,
-            boxShadow: "0 30px 80px -20px rgba(0,0,0,0.12), 0 6px 24px rgba(0,0,0,0.04)",
-          }}
-        >
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{
-              background: `linear-gradient(135deg, ${C.blue}, #5856d6)`,
-            }}>
-              <Icon name="shield" size={20} />
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-widest font-semibold" style={{ color: C.text3 }}>Restricted</div>
-              <h1 className="text-[22px] font-semibold" style={{ color: C.text, letterSpacing: "-0.02em" }}>
-                Site Administration
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex p-0.5 rounded-xl mb-6" style={{ background: "#f0f0f2" }}>
-            {(["login", "register"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => { onSwitch(v); setErr(""); setMsg(""); }}
-                className="flex-1 py-2 text-[13px] font-medium rounded-[10px] transition-all duration-200"
-                style={{
-                  background: view === v ? C.surface : "transparent",
-                  color: view === v ? C.text : C.text2,
-                  boxShadow: view === v ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                }}
-              >
-                {v === "login" ? "Sign In" : "Register"}
-              </button>
-            ))}
-          </div>
-
-          {err && (
-            <div className="cf-fade mb-4 px-3.5 py-2.5 text-[13px] rounded-lg" style={{
-              background: "rgba(255,59,48,0.08)", color: C.red, border: "1px solid rgba(255,59,48,0.15)",
-            }}>{err}</div>
-          )}
-          {msg && (
-            <div className="cf-fade mb-4 px-3.5 py-2.5 text-[13px] rounded-lg" style={{
-              background: "rgba(48,209,88,0.08)", color: "#248a3d", border: "1px solid rgba(48,209,88,0.2)",
-            }}>{msg}</div>
-          )}
-
-          <div className="space-y-4">
-            <Field label="Access code" hint="8–10 characters">
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 10))}
-                maxLength={10}
-                placeholder="CF2026ADMN"
-                className="num w-full py-3 px-0 bg-transparent outline-none text-[17px] font-medium tracking-[0.15em]"
-                style={{ color: C.text }}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="First name">
-                <input
-                  value={fn} onChange={(e) => setFn(e.target.value)} placeholder="Cade"
-                  className="w-full py-3 px-0 bg-transparent outline-none text-[15px]"
-                  style={{ color: C.text }}
-                />
-              </Field>
-              <Field label="Last name">
-                <input
-                  value={ln} onChange={(e) => setLn(e.target.value)} placeholder="Miller"
-                  className="w-full py-3 px-0 bg-transparent outline-none text-[15px]"
-                  style={{ color: C.text }}
-                />
-              </Field>
-            </div>
-
-            <button
-              onClick={submit}
-              disabled={loading}
-              className="w-full py-3.5 rounded-[12px] text-[15px] font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-              style={{
-                background: `linear-gradient(180deg, ${C.blue}, #0062c9)`,
-                boxShadow: "0 6px 16px rgba(0,113,227,0.25), inset 0 1px 0 rgba(255,255,255,0.15)",
-              }}
-            >
-              {loading ? "Please wait…" : view === "login" ? "Sign In" : "Create Admin Account"}
-            </button>
-          </div>
-        </div>
-
-        <p className="text-center text-xs mt-6" style={{ color: C.text3 }}>
-          Authorized personnel only. All actions are logged.
-        </p>
+    <div className="cf-admin min-h-screen flex items-center justify-center p-8" style={{ background: C.bg }}>
+      <div className="w-full max-w-[440px] rounded-2xl bg-white p-10">
+        <Link href="/">Back to site</Link>
+        <h1 className="text-2xl font-semibold mt-6 mb-4">Site Administration</h1>
+        <p className="text-sm mb-6">Use your Community Fundings account. Administrator access must be approved by the project owner; public registration is disabled.</p>
+        {err && <p role="alert" className="text-sm text-red-600 mb-4">{err}</p>}
+        {isLoaded && !isSignedIn ? (
+          <Link href="/sign-in" className="underline">Sign in to Community Fundings</Link>
+        ) : (
+          <button onClick={submit} disabled={!isLoaded || loading}
+            className="w-full rounded-xl py-3 text-white disabled:opacity-50" style={{ background: C.blue }}>
+            {loading ? "Verifying access…" : "Continue with current account"}
+          </button>
+        )}
       </div>
     </div>
   );
