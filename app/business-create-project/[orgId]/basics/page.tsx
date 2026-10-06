@@ -142,16 +142,10 @@ export default function OrgBasicsPage() {
     setSaveError(null);
     setSaving(true);
     try {
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("cf_backend_token")
-          : null;
-      if (!token) {
-        setSaveError("Sign in and wait a moment for account sync, then try again.");
-        return;
-      }
-
       const campaignId = await saveOrgDraftToBackend(orgId, user ?? undefined);
+      // Draft saving may renew the session; uploads must use that new token.
+      const token = localStorage.getItem("cf_backend_token");
+      if (!token) throw new Error("Could not establish a session with the server.");
 
       const stored = useOrgCampaignDraft.getState().draft;
       const uploaded =
