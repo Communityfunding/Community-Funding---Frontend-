@@ -21,6 +21,7 @@ export default function PaymentPage() {
 
   const [contactEmail, setContactEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState(false);
+  const [emailVerificationError, setEmailVerificationError] = useState<string | null>(null);
   const [accountHolderName, setAccountHolderName] = useState("");
   const [routingNumber, setRoutingNumber] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -44,6 +45,10 @@ export default function PaymentPage() {
 
   const routingValid = routingNumber.length === 9;
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim());
+  const contactVerifiedInClerk = !!user?.emailAddresses.some(
+    (address) => address.emailAddress.toLowerCase() === contactEmail.trim().toLowerCase()
+      && address.verification.status === "verified"
+  );
   const accountsMatch =
     accountNumber.length > 0 && confirmAccountNumber === accountNumber;
 
@@ -52,6 +57,7 @@ export default function PaymentPage() {
     if (!user?.id) return false;
     return (
       emailVerified &&
+      contactVerifiedInClerk &&
       emailOk &&
       accountHolderName.trim().length > 0 &&
       routingValid &&
@@ -64,6 +70,7 @@ export default function PaymentPage() {
     hasHydrated,
     user?.id,
     emailVerified,
+    contactVerifiedInClerk,
     emailOk,
     accountHolderName,
     routingValid,
@@ -73,8 +80,12 @@ export default function PaymentPage() {
   ]);
 
   const handleVerifyEmail = () => {
-    if (contactEmail && emailOk) {
+    if (emailOk && contactVerifiedInClerk) {
       setEmailVerified(true);
+      setEmailVerificationError(null);
+    } else {
+      setEmailVerified(false);
+      setEmailVerificationError("Use an email address already verified in your Community Fundings account.");
     }
   };
 
@@ -226,9 +237,10 @@ export default function PaymentPage() {
                     d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                A verification link has been sent to your email.
+                This address is verified in your Clerk account.
               </p>
             )}
+            {emailVerificationError && <p role="alert" className="text-sm text-red-600 mt-2">{emailVerificationError}</p>}
           </div>
         </div>
 
