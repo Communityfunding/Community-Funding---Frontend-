@@ -11,8 +11,22 @@ import type { JSX } from "react";
 import { useState, useEffect, Suspense, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// A stored admin_id is UI state only. Every request must carry a verified
+// Clerk session; the backend checks a separately provisioned admin grant.
+function useSiteAdminFetch() {
+  const { getToken } = useAuth();
+  return useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const token = await getToken();
+    if (!token) throw new Error("Sign in to Community Fundings before using administrator tools.");
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return window.fetch(input, { ...init, headers });
+  }, [getToken]);
+}
 
 /* ---------- typography: load Geist + Geist Mono via <style jsx global> ---------- */
 const GlobalFonts = () => (
@@ -228,6 +242,7 @@ function AuthScreen({
   onSwitch: (v: "login" | "register") => void;
   onAuthed: (id: number, name: string) => void;
 }) {
+  const fetch = useSiteAdminFetch();
   const [code, setCode] = useState("");
   const [fn, setFn] = useState("");
   const [ln, setLn] = useState("");
@@ -237,6 +252,10 @@ function AuthScreen({
 
   const submit = async () => {
     setErr(""); setMsg("");
+    if (view === "register") {
+      setErr("Public administrator registration is disabled. Contact the project owner for access.");
+      return;
+    }
     const formatError = (d: any): string => {
       if (!d) return "Authentication failed";
       if (typeof d === "string") return d;
@@ -259,9 +278,6 @@ function AuthScreen({
     };
     
     if (!code || !fn || !ln) { setErr("All fields are required."); return; }
-    if (view === "register" && (code.length < 8 || code.length > 10)) {
-      setErr("Access code must be 8–10 characters."); return;
-    }
     setLoading(true);
     try {
       const r = await fetch(`${API}/api/site-admin/${view}`, {
@@ -271,12 +287,7 @@ function AuthScreen({
       });
       const d = await r.json();
       if (!r.ok) { setErr(formatError(d)); return; }
-      if (view === "register") {
-        setMsg("Registered. Please sign in.");
-        onSwitch("login");
-      } else {
-        onAuthed(d.admin_id, d.name);
-      }
+      onAuthed(d.admin_id, d.name);
     } catch { setErr("Network error — is the backend running?"); }
     finally { setLoading(false); }
   };
@@ -509,6 +520,7 @@ function Sidebar({
 /* =================================================================== */
 
 function OverviewSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -652,6 +664,7 @@ function OverviewSection({ adminId, notify }: { adminId: number; notify: (t: "su
 /* =================================================================== */
 
 function CampaignsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -756,6 +769,7 @@ function CampaignsSection({ adminId, notify }: { adminId: number; notify: (t: "s
 /* =================================================================== */
 
 function UsersSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -843,6 +857,7 @@ function UsersSection({ adminId, notify }: { adminId: number; notify: (t: "succe
 /* =================================================================== */
 
 function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [pending, setPending] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1039,6 +1054,7 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
 /* =================================================================== */
 
 function TransactionsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -1114,6 +1130,7 @@ function TransactionsSection({ adminId, notify }: { adminId: number; notify: (t:
 /* =================================================================== */
 
 function ActivitySection({ adminId }: { adminId: number }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
