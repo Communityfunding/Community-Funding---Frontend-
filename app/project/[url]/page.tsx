@@ -435,6 +435,7 @@ export default function ProjectDetail() {
   const [isReplySubmitting, setIsReplySubmitting] = useState(false);
 
   const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
+  const [commentToRemove, setCommentToRemove] = useState<CommentId | null>(null);
   const [editText, setEditText] = useState("");
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
@@ -683,8 +684,8 @@ export default function ProjectDetail() {
   async function handleDeleteComment(commentId: CommentId) {
     if (!url) return;
 
-    const confirmed = window.confirm("Are you sure you want to delete your comment?");
-    if (!confirmed) return;
+    if (commentToRemove !== commentId) return;
+    setCommentToRemove(null);
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -1354,7 +1355,7 @@ export default function ProjectDetail() {
                                         Edit
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteComment(comment.comment_id)}
+                                        onClick={() => setCommentToRemove(comment.comment_id)}
                                         className="text-sm text-red-600 hover:underline"
                                       >
                                         Delete
@@ -1494,7 +1495,7 @@ export default function ProjectDetail() {
                                                     Edit
                                                   </button>
                                                   <button
-                                                    onClick={() => handleDeleteComment(reply.comment_id)}
+                                                    onClick={() => setCommentToRemove(reply.comment_id)}
                                                     className="text-sm text-red-600 hover:underline"
                                                   >
                                                     Delete
@@ -1820,6 +1821,18 @@ export default function ProjectDetail() {
       </main>
 
       {/* v100_donate_main — Donation Modal */}
+      {commentToRemove !== null && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div role="dialog" aria-modal="true" aria-label="Remove comment" className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <h2 className="font-bold text-xl mb-3">{supportsCommentThreads ? "Delete comment?" : "Hide comment?"}</h2>
+            <p className="text-sm mb-5">{supportsCommentThreads ? "This permanently removes your comment." : "This hides your comment from the campaign. The record is retained for moderation."}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCommentToRemove(null)} className="px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => handleDeleteComment(commentToRemove)} className="px-4 py-2 bg-red-600 text-white rounded-lg">{supportsCommentThreads ? "Delete comment" : "Hide comment"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showDonateModal && data?.campaign && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
