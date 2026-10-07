@@ -49,14 +49,15 @@ type Reward = {
   required_amount_cents: number;
 };
 
+type CommentId = string | number;
 type Comment = {
-  comment_id: number;
+  comment_id: CommentId;
   comment_text: string;
   creator_id: string;
   username?: string | null;
   campaign_id: number;
-  parent_comment_id?: number | null;
-  reply_to_comment_id?: number | null;
+  parent_comment_id?: CommentId | null;
+  reply_to_comment_id?: CommentId | null;
   reply_to_name?: string | null;
   name?: string;
   last_name?: string;
@@ -114,6 +115,7 @@ type ViewerPermissions = {
   has_pending_invite: boolean;
   can_view: boolean;
   can_comment: boolean;
+  supports_comment_threads?: boolean;
 };
 
 type CampaignPageData = {
@@ -427,18 +429,18 @@ export default function ProjectDetail() {
   const [commentText, setCommentText] = useState("");
   const [isCommentSubmitting, setIsCommentSubmitting] = useState(false);
 
-  const [replyingToParentId, setReplyingToParentId] = useState<number | null>(null);
+  const [replyingToParentId, setReplyingToParentId] = useState<CommentId | null>(null);
   const [replyingToComment, setReplyingToComment] = useState<Comment | null>(null);
   const [replyText, setReplyText] = useState("");
   const [isReplySubmitting, setIsReplySubmitting] = useState(false);
 
-  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
   const [editText, setEditText] = useState("");
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const [commentPage, setCommentPage] = useState(1);
-  const [loadingRepliesFor, setLoadingRepliesFor] = useState<number | null>(null);
-  const [reportingCommentId, setReportingCommentId] = useState<number | null>(null);
+  const [loadingRepliesFor, setLoadingRepliesFor] = useState<CommentId | null>(null);
+  const [reportingCommentId, setReportingCommentId] = useState<CommentId | null>(null);
   const [isCampaignReporting, setIsCampaignReporting] = useState(false);
   const [isLeavingCampaign, setIsLeavingCampaign] = useState(false);
 
@@ -621,7 +623,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleSubmitReply(parentCommentId: number) {
+  async function handleSubmitReply(parentCommentId: CommentId) {
     if (!url || !replyText.trim()) return;
 
     try {
@@ -678,7 +680,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleDeleteComment(commentId: number) {
+  async function handleDeleteComment(commentId: CommentId) {
     if (!url) return;
 
     const confirmed = window.confirm("Are you sure you want to delete your comment?");
@@ -733,7 +735,7 @@ export default function ProjectDetail() {
     setEditText(comment.comment_text);
   }
 
-  async function handleSaveEditedComment(commentId: number) {
+  async function handleSaveEditedComment(commentId: CommentId) {
     if (!url || !editText.trim()) return;
 
     try {
@@ -796,7 +798,7 @@ export default function ProjectDetail() {
 
       if (!res.ok) throw new Error(`Failed to toggle like: ${res.status}`);
 
-      const json = (await res.json()) as { liked: boolean; like_count: number; comment_id: number };
+      const json = (await res.json()) as { liked: boolean; like_count: number; comment_id: CommentId };
 
       setData((prev) => {
         if (!prev) return prev;
@@ -931,7 +933,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleLoadMoreReplies(parentCommentId: number) {
+  async function handleLoadMoreReplies(parentCommentId: CommentId) {
     if (!url) return;
 
     try {
@@ -951,7 +953,7 @@ export default function ProjectDetail() {
         throw new Error(`Failed to load replies: ${res.status}`);
       }
 
-      const json = (await res.json()) as { comment_id: number; replies: Comment[] };
+      const json = (await res.json()) as { comment_id: CommentId; replies: Comment[] };
 
       setData((prev) => {
         if (!prev) return prev;
@@ -977,7 +979,7 @@ export default function ProjectDetail() {
     }
   }
 
-  function handleCollapseReplies(parentCommentId: number) {
+  function handleCollapseReplies(parentCommentId: CommentId) {
     setData((prev) => {
       if (!prev) return prev;
 
@@ -1027,6 +1029,7 @@ export default function ProjectDetail() {
 
   const canViewCampaign = viewerPermissions?.can_view ?? Boolean(campaign && (isCampaignActive || isOwner || isCollaborator));
   const canComment = viewerPermissions?.can_comment ?? Boolean(isCampaignActive);
+  const supportsCommentThreads = viewerPermissions?.supports_comment_threads !== false;
   const canEditCampaign = isOwner || isCollaborator;
 
   const creatorFullName = creator
@@ -1250,7 +1253,7 @@ export default function ProjectDetail() {
                       >
                         <option value="newest">Newest</option>
                         <option value="oldest">Oldest</option>
-                        <option value="most_liked">Most liked</option>
+                        {supportsCommentThreads && <option value="most_liked">Most liked</option>}
                       </select>
                     </div>
                   </div>
@@ -1314,7 +1317,7 @@ export default function ProjectDetail() {
                                 </p>
 
                                 <div className="flex flex-wrap items-center gap-4">
-                                  {user && (
+                                  {user && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleReplyClick(comment)}
                                       className="text-sm text-[#8BC34A] hover:underline"
@@ -1323,7 +1326,7 @@ export default function ProjectDetail() {
                                     </button>
                                   )}
 
-                                  {user && (
+                                  {user && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleToggleLike(comment)}
                                       className={`text-sm hover:underline ${comment.liked_by_viewer ? "text-blue-600" : "text-gray-600"}`}
@@ -1332,7 +1335,7 @@ export default function ProjectDetail() {
                                     </button>
                                   )}
 
-                                  {!comment.is_you && (
+                                  {!comment.is_you && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleReportComment(comment)}
                                       disabled={reportingCommentId === comment.comment_id}
