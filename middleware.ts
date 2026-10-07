@@ -9,6 +9,9 @@ const isPublicRoute = createRouteMatcher([
   "/sso-callback(.*)",
   "/projects-we-love(.*)",
   "/project(.*)",
+  // Guests can open the receipt shell; the backend still requires the
+  // matching Checkout session capability or an authenticated record owner.
+  "/donation-receipt",
   "/categories(.*)",
   "/about-us(.*)",
   "/how-it-works(.*)",
