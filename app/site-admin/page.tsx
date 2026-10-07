@@ -740,11 +740,13 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
   const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [pending, setPending] = useState<any>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"pending" | "campaigns" | "comments">("pending");
 
   const load = useCallback(async () => {
     setLoading(true);
+    setQueueError(null);
     try {
       const [r1, r2] = await Promise.all([
         fetch(`${API}/api/site-admin/reports?admin_id=${adminId}`),
@@ -752,7 +754,8 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
       ]);
       if (r1.ok) setData(await r1.json());
       if (r2.ok) setPending(await r2.json());
-    } catch {} finally { setLoading(false); }
+      else { setPending(null); setQueueError("Could not load the pending approval queue. Please retry."); }
+    } catch { setPending(null); setQueueError("Could not load the pending approval queue. Please retry."); } finally { setLoading(false); }
   }, [adminId]);
 
   useEffect(() => { load(); }, [load]);
@@ -836,7 +839,8 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
 
       {!loading && tab === "pending" && (
         <div className="space-y-3">
-          {pendingCount === 0 && <EmptyCard title="Nothing pending" subtitle="All campaigns have been reviewed." icon="check" />}
+          {queueError && <div role="alert"><p>{queueError}</p><Button tone="primary" onClick={load}>Retry</Button></div>}
+          {!queueError && pendingCount === 0 && <EmptyCard title="Nothing pending" subtitle="All campaigns have been reviewed." icon="check" />}
           {pending?.pending?.map((c: any) => (
             <Card key={c.campaign_id} padding="lg" className="cf-slide">
               <div className="flex items-start gap-4">
