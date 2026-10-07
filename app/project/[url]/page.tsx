@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
+import { ensureBackendSession } from "@/lib/backendToken";
 import { useParams, useRouter } from "next/navigation";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -213,6 +214,7 @@ function getProfileHref(person?: { username?: string | null; creator_id?: string
 
 function getAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
+  if (!(window as Window & { Clerk?: { session?: unknown } }).Clerk?.session) return {};
   const token = localStorage.getItem("cf_backend_token");
   if (!token || token === "undefined" || token === "null") return {};
   return { Authorization: `Bearer ${token}` };
@@ -371,7 +373,7 @@ export default function ProjectDetail() {
   const [reportError, setReportError] = useState("");
   const [reportSuccess, setReportSuccess] = useState(false);
 
-  const { user } = useUser();
+  const { user, isLoaded: userLoaded } = useUser();
   const { getToken } = useAuth();
   // v100_t25_report_button — submit report handler
   const submitReport = async () => {
@@ -528,6 +530,8 @@ export default function ProjectDetail() {
         sort_by: targetSortBy,
       });
 
+      if (user && !(await ensureBackendSession(user))) throw new Error("Please sign in again to verify your session.");
+
       const res = await fetch(`${API_BASE}/api/campaign-page/${url}?${params.toString()}`, {
         cache: "no-store",
         headers: getAuthHeaders(),
@@ -536,6 +540,8 @@ export default function ProjectDetail() {
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
 
       const json = (await res.json()) as CampaignPageData;
+      const currentIdentity = (window as Window & { Clerk?: { user?: { id: string } | null } }).Clerk?.user?.id;
+      if (currentIdentity !== user?.id) return;
       setData(json);
       setCommentPage(json.comments_pagination?.page ?? targetPage);
       setSortBy(targetSortBy);
@@ -546,9 +552,10 @@ export default function ProjectDetail() {
   }
 
   useEffect(() => {
-    if (!url) return;
+    if (!url || !userLoaded) return;
+    setData(null);
     loadCampaignPage(1);
-  }, [url]);
+  }, [url, userLoaded, user?.id]);
 
   async function handleToggleSave() {
     if (!url || !user || !data) return;
