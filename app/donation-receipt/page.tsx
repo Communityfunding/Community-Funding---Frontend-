@@ -3,7 +3,7 @@
 /* v100_donate_main — Donation receipt page (3 actions) */
 
 import { Suspense, useEffect, useState} from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const API_URL =
@@ -14,6 +14,7 @@ type Donation = {
   campaign_id: number;
   campaign_title?: string;
   campaign_url?: string;
+  campaign_slug?: string;
   amount: number | string;
   status: string;
   time_created?: string;
@@ -21,6 +22,7 @@ type Donation = {
   donor_email?: string;
   donor_name?: string;
   creator_name?: string;
+  campaign_creator_name?: string;
   creator_username?: string;
 };
 
@@ -39,14 +41,12 @@ function fmtReceiptDate(s: string | undefined | null): string {
 
 function _DonationReceiptInner() {
   const params = useSearchParams();
-  const router = useRouter();
   const donationId = params.get("donation_id");
   const sessionId = params.get("session_id");
 
   const [donation, setDonation] = useState<Donation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [redirectIn, setRedirectIn] = useState(15);
 
   useEffect(() => {
     if (!donationId) {
@@ -78,22 +78,6 @@ function _DonationReceiptInner() {
     };
   }, [donationId, sessionId]);
 
-  // Auto-redirect to home after 15s
-  useEffect(() => {
-    if (loading || error) return;
-    const t = setInterval(() => {
-      setRedirectIn((s) => {
-        if (s <= 1) {
-          clearInterval(t);
-          router.push("/");
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [loading, error, router]);
-
   if (loading) return <CenterMsg msg="Loading your receipt…" />;
   if (error || !donation)
     return <ErrorCard message={error || "Donation not found"} />;
@@ -102,9 +86,11 @@ function _DonationReceiptInner() {
     typeof donation.amount === "string"
       ? parseFloat(donation.amount)
       : donation.amount;
-  const campaignHref = donation.campaign_url
-    ? `/project/${donation.campaign_url}`
+  const campaignSlug = donation.campaign_slug || donation.campaign_url;
+  const campaignHref = campaignSlug
+    ? `/project/${encodeURIComponent(campaignSlug)}`
     : `/project/${donation.campaign_id}`;
+  const creatorName = donation.campaign_creator_name || donation.creator_name;
   const statusLower = (donation.status || "").toLowerCase();
   const isPaid = statusLower === "completed" || statusLower === "succeeded";
   const statusColor =
@@ -148,8 +134,8 @@ function _DonationReceiptInner() {
             <p className="text-gray-600 mt-2">
               to {donation.campaign_title || `Campaign #${donation.campaign_id}`}
             </p>
-            {donation.creator_name && (
-              <p className="text-gray-400 text-sm">by {donation.creator_name}</p>
+            {creatorName && (
+              <p className="text-gray-400 text-sm">by {creatorName}</p>
             )}
           </div>
 
@@ -203,9 +189,6 @@ function _DonationReceiptInner() {
             </Link>
           </div>
 
-          <p className="text-center text-xs text-gray-400 mt-4">
-            Redirecting in {redirectIn}s…
-          </p>
         </div>
       </div>
     </div>
