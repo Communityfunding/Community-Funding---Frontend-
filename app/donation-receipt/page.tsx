@@ -16,7 +16,8 @@ type Donation = {
   campaign_url?: string;
   amount: number | string;
   status: string;
-  time_created: string;
+  time_created?: string;
+  created_at?: string;
   donor_email?: string;
   donor_name?: string;
   creator_name?: string;
@@ -105,6 +106,7 @@ function _DonationReceiptInner() {
     ? `/project/${donation.campaign_url}`
     : `/project/${donation.campaign_id}`;
   const statusLower = (donation.status || "").toLowerCase();
+  const isPaid = statusLower === "completed" || statusLower === "succeeded";
   const statusColor =
     statusLower === "completed" || statusLower === "succeeded"
       ? "text-green-600"
@@ -133,8 +135,8 @@ function _DonationReceiptInner() {
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">Thank You!</h1>
-          <p className="text-white/90">Your donation was successful</p>
+          <h1 className="text-3xl font-bold text-white mb-1">{isPaid ? "Thank You!" : "Payment status"}</h1>
+          <p className="text-white/90">{isPaid ? "Your donation was successful" : "Your payment is not confirmed. Check the status below."}</p>
         </div>
 
         {/* Body */}
@@ -167,12 +169,12 @@ function _DonationReceiptInner() {
             <div className="flex justify-between">
               <span className="text-gray-500">Date</span>
               <span className="text-gray-900">
-                {fmtReceiptDate(donation.time_created)}
+                {fmtReceiptDate(donation.time_created || donation.created_at)}
               </span>
             </div>
             {donation.donor_email && (
               <div className="flex justify-between">
-                <span className="text-gray-500">Receipt sent to</span>
+                <span className="text-gray-500">Contact email</span>
                 <span className="text-gray-900">{donation.donor_email}</span>
               </div>
             )}
