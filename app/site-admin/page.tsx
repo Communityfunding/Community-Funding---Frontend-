@@ -743,6 +743,9 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
   const [queueError, setQueueError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"pending" | "campaigns" | "comments">("pending");
+  const [rejectTarget, setRejectTarget] = useState<{ id: number; title: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectBusy, setRejectBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -765,15 +768,19 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
     if (r.ok) { notify("success", `Approved: ${title}`); load(); }
     else { const d = await r.json().catch(() => ({})); notify("error", d.detail || "Approve failed"); }
   };
-  const rejectCampaign = async (id: number, title: string) => {
-    const reason = prompt(`Why are you rejecting "${title}"?`);
-    if (!reason) return;
+  const rejectCampaign = async () => {
+    if (!rejectTarget || rejectBusy || !rejectReason.trim()) return;
+    const { id, title } = rejectTarget;
+    setRejectBusy(true);
+    try {
     const r = await fetch(`${API}/api/site-admin/campaigns/${id}/reject?admin_id=${adminId}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: rejectReason.trim() }),
     });
-    if (r.ok) { notify("success", `Rejected: ${title}`); load(); }
+    if (r.ok) { setRejectTarget(null); setRejectReason(""); notify("success", `Rejected: ${title}`); load(); }
     else { const d = await r.json().catch(() => ({})); notify("error", d.detail || "Reject failed"); }
+    } catch { notify("error", "Could not reject campaign. Please retry."); }
+    finally { setRejectBusy(false); }
   };
 
   const delCampaign = async (id: number, title: string) => {
@@ -815,6 +822,20 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Moderation" title="Reports" subtitle="Review flagged content and pending campaigns" />
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="reject-title" className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 id="reject-title" className="text-lg font-semibold">Reject campaign</h2>
+            <p className="my-3">{rejectTarget.title}</p>
+            <label htmlFor="reject-reason">Rejection reason</label>
+            <textarea id="reject-reason" autoFocus className="mt-2 w-full rounded-lg border p-3" rows={4} value={rejectReason} disabled={rejectBusy} onChange={(e) => setRejectReason(e.target.value)} />
+            <div className="mt-4 flex justify-end gap-3">
+              <button type="button" disabled={rejectBusy} onClick={() => { setRejectTarget(null); setRejectReason(""); }}>Cancel</button>
+              <button type="button" className="rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50" disabled={rejectBusy || !rejectReason.trim()} onClick={rejectCampaign}>{rejectBusy ? "Rejecting…" : "Confirm rejection"}</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <div className="flex p-0.5 rounded-[10px] w-fit" style={{ background: "#eaeaec" }}>
         {[
@@ -864,7 +885,7 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <Button tone="primary" onClick={() => approveCampaign(c.campaign_id, c.title)}>Approve</Button>
-                  <Button tone="danger" onClick={() => rejectCampaign(c.campaign_id, c.title)}>Reject</Button>
+                  <Button tone="danger" onClick={() => { setRejectTarget({ id: c.campaign_id, title: c.title }); setRejectReason(""); }}>Reject</Button>
                 </div>
               </div>
             </Card>
