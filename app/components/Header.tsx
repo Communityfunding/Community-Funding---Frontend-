@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { SignedIn, SignedOut, useUser, useClerk } from "@clerk/nextjs";
-import { backendJwtExpired, syncClerkToBackendToken } from "@/lib/backendToken";
+import { backendJwtExpired, syncClerkToBackendToken, clearBackendSession } from "@/lib/backendToken";
 
 
 type BusinessRole = "owner" | "admin" | "viewer" | "editor" | "campaign_editor" | "finance";
@@ -465,6 +465,7 @@ useEffect(() => {
   }, [isDropdownOpen, user]);
 
   const handleSignOut = () => {
+    clearBackendSession();
     signOut({ redirectUrl: "/" });
   };
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useSignIn } from "@clerk/nextjs";
+import { SignIn, useSignIn } from "@clerk/nextjs";
+import { signInNextStep } from "@/lib/signInFlow";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,24 +15,46 @@ export default function SignInPage() {
   const [rememberPassword, setRememberPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [verification, setVerification] = useState<"email_code" | "totp" | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [secureFlow, setSecureFlow] = useState(false);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) { setError("Authentication is still loading. Please wait and try again."); return; }
+    if (isLoading) return;
 
     setIsLoading(true);
     setError("");
 
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
-      });
+      const result = verification
+        ? await signIn.attemptSecondFactor({ strategy: verification, code: verificationCode.trim() })
+        : await signIn.create({ identifier: email.trim(), password });
 
-      if (result.status === "complete") {
+      const next = signInNextStep(result.status, (result.supportedSecondFactors || []).map(f => f.strategy));
+      if (next === "complete" && result.createdSessionId) {
+        setPassword("");
+        setVerificationCode("");
         await setActive({ session: result.createdSessionId });
-        router.push("/");
+        router.replace("/");
+        router.refresh();
+      } else if (next === "email_code" && !verification) {
+        const factor = result.supportedSecondFactors?.find(f => f.strategy === "email_code");
+        if (!factor || factor.strategy !== "email_code") throw new Error("Email verification is unavailable.");
+        await signIn.prepareSecondFactor({ strategy: "email_code", emailAddressId: factor.emailAddressId });
+        setPassword("");
+        setVerification("email_code");
+      } else if (next === "totp" && !verification) {
+        setPassword("");
+        setVerification("totp");
+      } else if (next === "secure_flow") {
+        setPassword("");
+        setSecureFlow(true);
+      } else {
+        setError(verification ? "Verification is not complete. Please check the code and try again." : "Sign-in requires an additional step. Please use the secure sign-in below.");
+        if (!verification) setSecureFlow(true);
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: { message: string }[] };
@@ -42,7 +65,7 @@ export default function SignInPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) { setError("Authentication is still loading. Please wait and try again."); return; }
 
     try {
       await signIn.authenticateWithRedirect({
@@ -86,12 +109,25 @@ export default function SignInPage() {
             <h1 className="text-4xl font-bold text-gray-900 mb-8">Log-in</h1>
 
             {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {secureFlow ? (
+              <div>
+                <p role="status" className="mb-4">Additional verification is required. Complete Clerk's secure sign-in below.</p>
+                <SignIn routing="hash" signUpUrl="/sign-up" forceRedirectUrl="/" />
+              </div>
+            ) : verification ? (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <p role="status">{verification === "email_code" ? "Check your email for a sign-in verification code." : "Enter the code from your authenticator app."}</p>
+                <label htmlFor="verification-code">Verification code</label>
+                <input id="verification-code" autoComplete="one-time-code" inputMode="numeric" required value={verificationCode} onChange={e => setVerificationCode(e.target.value)} className="w-full rounded-lg border p-3" />
+                <button type="submit" disabled={!isLoaded || isLoading || !verificationCode.trim()} className="w-full rounded-lg bg-[#8BC34A] p-3 text-white disabled:opacity-50">{isLoading ? "Verifying…" : "Verify and sign in"}</button>
+                <button type="button" disabled={isLoading} onClick={() => { setVerification(null); setVerificationCode(""); setError(""); }}>Back to login</button>
+              </form>
+            ) : <form onSubmit={handleSubmit} className="space-y-6">
               {/* Email Field */}
               <div>
                 <label
@@ -217,10 +253,10 @@ export default function SignInPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={!isLoaded || isLoading}
                 className="w-full bg-[#8BC34A] text-white py-3 rounded-lg font-medium hover:bg-[#7CB342] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Signing in..." : "Log-in"}
+                {!isLoaded ? "Loading authentication…" : isLoading ? "Signing in..." : "Log-in"}
               </button>
 
               {/* Divider */}
@@ -276,7 +312,7 @@ export default function SignInPage() {
                 </Link>
                 .
               </p>
-            </form>
+            </form>}
           </div>
         </div>
       </div>

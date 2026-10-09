@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { ensureBackendSession } from "@/lib/backendToken";
 import { useParams, useRouter } from "next/navigation";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -49,14 +50,15 @@ type Reward = {
   required_amount_cents: number;
 };
 
+type CommentId = string | number;
 type Comment = {
-  comment_id: number;
+  comment_id: CommentId;
   comment_text: string;
   creator_id: string;
   username?: string | null;
   campaign_id: number;
-  parent_comment_id?: number | null;
-  reply_to_comment_id?: number | null;
+  parent_comment_id?: CommentId | null;
+  reply_to_comment_id?: CommentId | null;
   reply_to_name?: string | null;
   name?: string;
   last_name?: string;
@@ -114,6 +116,7 @@ type ViewerPermissions = {
   has_pending_invite: boolean;
   can_view: boolean;
   can_comment: boolean;
+  supports_comment_threads?: boolean;
 };
 
 type CampaignPageData = {
@@ -211,6 +214,7 @@ function getProfileHref(person?: { username?: string | null; creator_id?: string
 
 function getAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
+  if (!(window as Window & { Clerk?: { session?: unknown } }).Clerk?.session) return {};
   const token = localStorage.getItem("cf_backend_token");
   if (!token || token === "undefined" || token === "null") return {};
   return { Authorization: `Bearer ${token}` };
@@ -369,7 +373,8 @@ export default function ProjectDetail() {
   const [reportError, setReportError] = useState("");
   const [reportSuccess, setReportSuccess] = useState(false);
 
-  const { user } = useUser();
+  const { user, isLoaded: userLoaded } = useUser();
+  const { getToken } = useAuth();
   // v100_t25_report_button — submit report handler
   const submitReport = async () => {
     if (!user) {
@@ -426,18 +431,19 @@ export default function ProjectDetail() {
   const [commentText, setCommentText] = useState("");
   const [isCommentSubmitting, setIsCommentSubmitting] = useState(false);
 
-  const [replyingToParentId, setReplyingToParentId] = useState<number | null>(null);
+  const [replyingToParentId, setReplyingToParentId] = useState<CommentId | null>(null);
   const [replyingToComment, setReplyingToComment] = useState<Comment | null>(null);
   const [replyText, setReplyText] = useState("");
   const [isReplySubmitting, setIsReplySubmitting] = useState(false);
 
-  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
+  const [commentToRemove, setCommentToRemove] = useState<CommentId | null>(null);
   const [editText, setEditText] = useState("");
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const [commentPage, setCommentPage] = useState(1);
-  const [loadingRepliesFor, setLoadingRepliesFor] = useState<number | null>(null);
-  const [reportingCommentId, setReportingCommentId] = useState<number | null>(null);
+  const [loadingRepliesFor, setLoadingRepliesFor] = useState<CommentId | null>(null);
+  const [reportingCommentId, setReportingCommentId] = useState<CommentId | null>(null);
   const [isCampaignReporting, setIsCampaignReporting] = useState(false);
   const [isLeavingCampaign, setIsLeavingCampaign] = useState(false);
 
@@ -469,23 +475,12 @@ export default function ProjectDetail() {
     setDonateLoading(true);
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const token = typeof window !== "undefined" ? localStorage.getItem("cf_backend_token") : null;
+      const token = user ? await getToken() : null;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
 
 
-      // v100_signin_guard — sign-in required for donations
-
-
-      if (!user) {
-
-
-        window.location.href = "/sign-in?redirect_url=" + encodeURIComponent(window.location.pathname);
-
-
-        return;
-
-
-      }
+      // Guest contributions remain supported; signed-in donors use a verified Clerk token.
+      if (user && !token) throw new Error("Your session expired. Please sign in again.");
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch(`${API_BASE}/api/donations-v2/create-checkout-session`, {
@@ -535,6 +530,8 @@ export default function ProjectDetail() {
         sort_by: targetSortBy,
       });
 
+      if (user && !(await ensureBackendSession(user))) throw new Error("Please sign in again to verify your session.");
+
       const res = await fetch(`${API_BASE}/api/campaign-page/${url}?${params.toString()}`, {
         cache: "no-store",
         headers: getAuthHeaders(),
@@ -543,6 +540,8 @@ export default function ProjectDetail() {
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
 
       const json = (await res.json()) as CampaignPageData;
+      const currentIdentity = (window as Window & { Clerk?: { user?: { id: string } | null } }).Clerk?.user?.id;
+      if (currentIdentity !== user?.id) return;
       setData(json);
       setCommentPage(json.comments_pagination?.page ?? targetPage);
       setSortBy(targetSortBy);
@@ -553,9 +552,10 @@ export default function ProjectDetail() {
   }
 
   useEffect(() => {
-    if (!url) return;
+    if (!url || !userLoaded) return;
+    setData(null);
     loadCampaignPage(1);
-  }, [url]);
+  }, [url, userLoaded, user?.id]);
 
   async function handleToggleSave() {
     if (!url || !user || !data) return;
@@ -631,7 +631,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleSubmitReply(parentCommentId: number) {
+  async function handleSubmitReply(parentCommentId: CommentId) {
     if (!url || !replyText.trim()) return;
 
     try {
@@ -688,11 +688,11 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleDeleteComment(commentId: number) {
+  async function handleDeleteComment(commentId: CommentId) {
     if (!url) return;
 
-    const confirmed = window.confirm("Are you sure you want to delete your comment?");
-    if (!confirmed) return;
+    if (commentToRemove !== commentId) return;
+    setCommentToRemove(null);
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -743,7 +743,7 @@ export default function ProjectDetail() {
     setEditText(comment.comment_text);
   }
 
-  async function handleSaveEditedComment(commentId: number) {
+  async function handleSaveEditedComment(commentId: CommentId) {
     if (!url || !editText.trim()) return;
 
     try {
@@ -806,7 +806,7 @@ export default function ProjectDetail() {
 
       if (!res.ok) throw new Error(`Failed to toggle like: ${res.status}`);
 
-      const json = (await res.json()) as { liked: boolean; like_count: number; comment_id: number };
+      const json = (await res.json()) as { liked: boolean; like_count: number; comment_id: CommentId };
 
       setData((prev) => {
         if (!prev) return prev;
@@ -941,7 +941,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleLoadMoreReplies(parentCommentId: number) {
+  async function handleLoadMoreReplies(parentCommentId: CommentId) {
     if (!url) return;
 
     try {
@@ -961,7 +961,7 @@ export default function ProjectDetail() {
         throw new Error(`Failed to load replies: ${res.status}`);
       }
 
-      const json = (await res.json()) as { comment_id: number; replies: Comment[] };
+      const json = (await res.json()) as { comment_id: CommentId; replies: Comment[] };
 
       setData((prev) => {
         if (!prev) return prev;
@@ -987,7 +987,7 @@ export default function ProjectDetail() {
     }
   }
 
-  function handleCollapseReplies(parentCommentId: number) {
+  function handleCollapseReplies(parentCommentId: CommentId) {
     setData((prev) => {
       if (!prev) return prev;
 
@@ -1037,6 +1037,7 @@ export default function ProjectDetail() {
 
   const canViewCampaign = viewerPermissions?.can_view ?? Boolean(campaign && (isCampaignActive || isOwner || isCollaborator));
   const canComment = viewerPermissions?.can_comment ?? Boolean(isCampaignActive);
+  const supportsCommentThreads = viewerPermissions?.supports_comment_threads !== false;
   const canEditCampaign = isOwner || isCollaborator;
 
   const creatorFullName = creator
@@ -1260,7 +1261,7 @@ export default function ProjectDetail() {
                       >
                         <option value="newest">Newest</option>
                         <option value="oldest">Oldest</option>
-                        <option value="most_liked">Most liked</option>
+                        {supportsCommentThreads && <option value="most_liked">Most liked</option>}
                       </select>
                     </div>
                   </div>
@@ -1324,7 +1325,7 @@ export default function ProjectDetail() {
                                 </p>
 
                                 <div className="flex flex-wrap items-center gap-4">
-                                  {user && (
+                                  {user && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleReplyClick(comment)}
                                       className="text-sm text-[#8BC34A] hover:underline"
@@ -1333,7 +1334,7 @@ export default function ProjectDetail() {
                                     </button>
                                   )}
 
-                                  {user && (
+                                  {user && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleToggleLike(comment)}
                                       className={`text-sm hover:underline ${comment.liked_by_viewer ? "text-blue-600" : "text-gray-600"}`}
@@ -1342,7 +1343,7 @@ export default function ProjectDetail() {
                                     </button>
                                   )}
 
-                                  {!comment.is_you && (
+                                  {!comment.is_you && supportsCommentThreads && (
                                     <button
                                       onClick={() => handleReportComment(comment)}
                                       disabled={reportingCommentId === comment.comment_id}
@@ -1361,7 +1362,7 @@ export default function ProjectDetail() {
                                         Edit
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteComment(comment.comment_id)}
+                                        onClick={() => setCommentToRemove(comment.comment_id)}
                                         className="text-sm text-red-600 hover:underline"
                                       >
                                         Delete
@@ -1501,7 +1502,7 @@ export default function ProjectDetail() {
                                                     Edit
                                                   </button>
                                                   <button
-                                                    onClick={() => handleDeleteComment(reply.comment_id)}
+                                                    onClick={() => setCommentToRemove(reply.comment_id)}
                                                     className="text-sm text-red-600 hover:underline"
                                                   >
                                                     Delete
@@ -1827,6 +1828,18 @@ export default function ProjectDetail() {
       </main>
 
       {/* v100_donate_main — Donation Modal */}
+      {commentToRemove !== null && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div role="dialog" aria-modal="true" aria-label="Remove comment" className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <h2 className="font-bold text-xl mb-3">{supportsCommentThreads ? "Delete comment?" : "Hide comment?"}</h2>
+            <p className="text-sm mb-5">{supportsCommentThreads ? "This permanently removes your comment." : "This hides your comment from the campaign. The record is retained for moderation."}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setCommentToRemove(null)} className="px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => handleDeleteComment(commentToRemove)} className="px-4 py-2 bg-red-600 text-white rounded-lg">{supportsCommentThreads ? "Delete comment" : "Hide comment"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showDonateModal && data?.campaign && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"

@@ -1,0 +1,16 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const context = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/signInFlow.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, context);
+const next = context.exports.signInNextStep;
+test('completed sign-in is the only complete state', () => assert.equal(next('complete', []), 'complete'));
+test('legacy device trust enters email verification', () => assert.equal(next('needs_second_factor', ['email_code']), 'email_code'));
+test('new device trust enters email verification', () => assert.equal(next('needs_client_trust', ['email_code']), 'email_code'));
+test('authenticator factor remains enforced', () => assert.equal(next('needs_second_factor', ['totp']), 'totp'));
+test('other MFA uses secure fallback rather than bypass', () => assert.equal(next('needs_second_factor', ['phone_code']), 'secure_flow'));
+test('password change remains in secure flow', () => assert.equal(next('needs_new_password', []), 'secure_flow'));
+test('incomplete first factor does not silently return', () => assert.equal(next('needs_first_factor', []), 'secure_flow'));
+test('unknown or missing status never completes authentication', () => { assert.equal(next(null, []), 'error'); assert.equal(next('unexpected', []), 'error'); });

@@ -3,23 +3,26 @@
 /* v100_donate_main — Donation receipt page (3 actions) */
 
 import { Suspense, useEffect, useState} from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 type Donation = {
-  donation_id: number;
+  donation_id: string;
   campaign_id: number;
   campaign_title?: string;
   campaign_url?: string;
+  campaign_slug?: string;
   amount: number | string;
   status: string;
-  time_created: string;
+  time_created?: string;
+  created_at?: string;
   donor_email?: string;
   donor_name?: string;
   creator_name?: string;
+  campaign_creator_name?: string;
   creator_username?: string;
 };
 
@@ -38,13 +41,12 @@ function fmtReceiptDate(s: string | undefined | null): string {
 
 function _DonationReceiptInner() {
   const params = useSearchParams();
-  const router = useRouter();
   const donationId = params.get("donation_id");
+  const sessionId = params.get("session_id");
 
   const [donation, setDonation] = useState<Donation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [redirectIn, setRedirectIn] = useState(15);
 
   useEffect(() => {
     if (!donationId) {
@@ -55,8 +57,11 @@ function _DonationReceiptInner() {
     let cancelled = false;
     (async () => {
       try {
+        const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+        const token = localStorage.getItem("cf_backend_token");
         const res = await fetch(
-          `${API_URL}/api/donations-v2/donation/${donationId}`
+          `${API_URL}/api/donations-v2/donation/${encodeURIComponent(donationId)}${query}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -71,23 +76,7 @@ function _DonationReceiptInner() {
     return () => {
       cancelled = true;
     };
-  }, [donationId]);
-
-  // Auto-redirect to home after 15s
-  useEffect(() => {
-    if (loading || error) return;
-    const t = setInterval(() => {
-      setRedirectIn((s) => {
-        if (s <= 1) {
-          clearInterval(t);
-          router.push("/");
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [loading, error, router]);
+  }, [donationId, sessionId]);
 
   if (loading) return <CenterMsg msg="Loading your receipt…" />;
   if (error || !donation)
@@ -97,10 +86,13 @@ function _DonationReceiptInner() {
     typeof donation.amount === "string"
       ? parseFloat(donation.amount)
       : donation.amount;
-  const campaignHref = donation.campaign_url
-    ? `/project/${donation.campaign_url}`
+  const campaignSlug = donation.campaign_slug || donation.campaign_url;
+  const campaignHref = campaignSlug
+    ? `/project/${encodeURIComponent(campaignSlug)}`
     : `/project/${donation.campaign_id}`;
+  const creatorName = donation.campaign_creator_name || donation.creator_name;
   const statusLower = (donation.status || "").toLowerCase();
+  const isPaid = statusLower === "completed" || statusLower === "succeeded";
   const statusColor =
     statusLower === "completed" || statusLower === "succeeded"
       ? "text-green-600"
@@ -129,8 +121,8 @@ function _DonationReceiptInner() {
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">Thank You!</h1>
-          <p className="text-white/90">Your donation was successful</p>
+          <h1 className="text-3xl font-bold text-white mb-1">{isPaid ? "Thank You!" : "Payment status"}</h1>
+          <p className="text-white/90">{isPaid ? "Your donation was successful" : "Your payment is not confirmed. Check the status below."}</p>
         </div>
 
         {/* Body */}
@@ -142,8 +134,8 @@ function _DonationReceiptInner() {
             <p className="text-gray-600 mt-2">
               to {donation.campaign_title || `Campaign #${donation.campaign_id}`}
             </p>
-            {donation.creator_name && (
-              <p className="text-gray-400 text-sm">by {donation.creator_name}</p>
+            {creatorName && (
+              <p className="text-gray-400 text-sm">by {creatorName}</p>
             )}
           </div>
 
@@ -163,12 +155,12 @@ function _DonationReceiptInner() {
             <div className="flex justify-between">
               <span className="text-gray-500">Date</span>
               <span className="text-gray-900">
-                {fmtReceiptDate(donation.time_created)}
+                {fmtReceiptDate(donation.time_created || donation.created_at)}
               </span>
             </div>
             {donation.donor_email && (
               <div className="flex justify-between">
-                <span className="text-gray-500">Receipt sent to</span>
+                <span className="text-gray-500">Contact email</span>
                 <span className="text-gray-900">{donation.donor_email}</span>
               </div>
             )}
@@ -197,9 +189,6 @@ function _DonationReceiptInner() {
             </Link>
           </div>
 
-          <p className="text-center text-xs text-gray-400 mt-4">
-            Redirecting in {redirectIn}s…
-          </p>
         </div>
       </div>
     </div>

@@ -11,8 +11,22 @@ import type { JSX } from "react";
 import { useState, useEffect, Suspense, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// A stored admin_id is UI state only. Every request must carry a verified
+// Clerk session; the backend checks a separately provisioned admin grant.
+function useSiteAdminFetch() {
+  const { getToken } = useAuth();
+  return useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const token = await getToken();
+    if (!token) throw new Error("Sign in to Community Fundings before using administrator tools.");
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return window.fetch(input, { ...init, headers });
+  }, [getToken]);
+}
 
 /* ---------- typography: load Geist + Geist Mono via <style jsx global> ---------- */
 const GlobalFonts = () => (
@@ -54,7 +68,7 @@ const C = {
 
 /* ---------- utils ---------- */
 const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 const fmtShort = (n: number) => {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
@@ -222,171 +236,48 @@ function SiteAdminContent() {
 /* =================================================================== */
 
 function AuthScreen({
-  view, onSwitch, onAuthed,
+  onAuthed,
 }: {
   view: "login" | "register";
   onSwitch: (v: "login" | "register") => void;
   onAuthed: (id: number, name: string) => void;
 }) {
-  const [code, setCode] = useState("");
-  const [fn, setFn] = useState("");
-  const [ln, setLn] = useState("");
+  const { isSignedIn, isLoaded } = useAuth();
+  const fetch = useSiteAdminFetch();
   const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
-
   const submit = async () => {
-    setErr(""); setMsg("");
-    const formatError = (d: any): string => {
-      if (!d) return "Authentication failed";
-      if (typeof d === "string") return d;
-      // Pydantic 422 — d.detail is array of error objects
-      if (Array.isArray(d.detail)) {
-        return d.detail
-          .map((e: any) =>
-            typeof e === "string"
-              ? e
-              : e?.msg
-                ? `${e.msg}${e.loc ? ` (${e.loc.join(".")})` : ""}`
-                : JSON.stringify(e)
-          )
-          .join("; ");
-      }
-      if (typeof d.detail === "string") return d.detail;
-      if (d.detail) return JSON.stringify(d.detail);
-      if (d.message) return String(d.message);
-      return "Authentication failed";
-    };
-    
-    if (!code || !fn || !ln) { setErr("All fields are required."); return; }
-    if (view === "register" && (code.length < 8 || code.length > 10)) {
-      setErr("Access code must be 8–10 characters."); return;
-    }
+    setErr("");
     setLoading(true);
     try {
-      const r = await fetch(`${API}/api/site-admin/${view}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: code, first_name: fn, last_name: ln }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setErr(formatError(d)); return; }
-      if (view === "register") {
-        setMsg("Registered. Please sign in.");
-        onSwitch("login");
-      } else {
-        onAuthed(d.admin_id, d.name);
+      const response = await fetch(`${API}/api/site-admin/login`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        setErr(typeof data.detail === "string" ? data.detail : "Administrator access could not be verified.");
+        return;
       }
-    } catch { setErr("Network error — is the backend running?"); }
-    finally { setLoading(false); }
+      onAuthed(data.admin_id, data.name);
+    } catch {
+      setErr("Administrator sign-in failed. Please sign in to Community Fundings and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-
   return (
-    <div className="cf-admin min-h-screen flex items-center justify-center p-8" style={{
-      background: "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(0,113,227,0.08), transparent 70%), #f5f5f7",
-    }}>
-      <div className="w-full max-w-[420px] cf-pop">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm mb-8 transition-colors" style={{ color: C.text2 }}>
-          <span style={{ fontSize: 18 }}>‹</span> Back to site
-        </Link>
-
-        <div
-          className="relative"
-          style={{
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            borderRadius: 20,
-            padding: 40,
-            boxShadow: "0 30px 80px -20px rgba(0,0,0,0.12), 0 6px 24px rgba(0,0,0,0.04)",
-          }}
-        >
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{
-              background: `linear-gradient(135deg, ${C.blue}, #5856d6)`,
-            }}>
-              <Icon name="shield" size={20} />
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-widest font-semibold" style={{ color: C.text3 }}>Restricted</div>
-              <h1 className="text-[22px] font-semibold" style={{ color: C.text, letterSpacing: "-0.02em" }}>
-                Site Administration
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex p-0.5 rounded-xl mb-6" style={{ background: "#f0f0f2" }}>
-            {(["login", "register"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => { onSwitch(v); setErr(""); setMsg(""); }}
-                className="flex-1 py-2 text-[13px] font-medium rounded-[10px] transition-all duration-200"
-                style={{
-                  background: view === v ? C.surface : "transparent",
-                  color: view === v ? C.text : C.text2,
-                  boxShadow: view === v ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                }}
-              >
-                {v === "login" ? "Sign In" : "Register"}
-              </button>
-            ))}
-          </div>
-
-          {err && (
-            <div className="cf-fade mb-4 px-3.5 py-2.5 text-[13px] rounded-lg" style={{
-              background: "rgba(255,59,48,0.08)", color: C.red, border: "1px solid rgba(255,59,48,0.15)",
-            }}>{err}</div>
-          )}
-          {msg && (
-            <div className="cf-fade mb-4 px-3.5 py-2.5 text-[13px] rounded-lg" style={{
-              background: "rgba(48,209,88,0.08)", color: "#248a3d", border: "1px solid rgba(48,209,88,0.2)",
-            }}>{msg}</div>
-          )}
-
-          <div className="space-y-4">
-            <Field label="Access code" hint="8–10 characters">
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 10))}
-                maxLength={10}
-                placeholder="CF2026ADMN"
-                className="num w-full py-3 px-0 bg-transparent outline-none text-[17px] font-medium tracking-[0.15em]"
-                style={{ color: C.text }}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="First name">
-                <input
-                  value={fn} onChange={(e) => setFn(e.target.value)} placeholder="Cade"
-                  className="w-full py-3 px-0 bg-transparent outline-none text-[15px]"
-                  style={{ color: C.text }}
-                />
-              </Field>
-              <Field label="Last name">
-                <input
-                  value={ln} onChange={(e) => setLn(e.target.value)} placeholder="Miller"
-                  className="w-full py-3 px-0 bg-transparent outline-none text-[15px]"
-                  style={{ color: C.text }}
-                />
-              </Field>
-            </div>
-
-            <button
-              onClick={submit}
-              disabled={loading}
-              className="w-full py-3.5 rounded-[12px] text-[15px] font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-              style={{
-                background: `linear-gradient(180deg, ${C.blue}, #0062c9)`,
-                boxShadow: "0 6px 16px rgba(0,113,227,0.25), inset 0 1px 0 rgba(255,255,255,0.15)",
-              }}
-            >
-              {loading ? "Please wait…" : view === "login" ? "Sign In" : "Create Admin Account"}
-            </button>
-          </div>
-        </div>
-
-        <p className="text-center text-xs mt-6" style={{ color: C.text3 }}>
-          Authorized personnel only. All actions are logged.
-        </p>
+    <div className="cf-admin min-h-screen flex items-center justify-center p-8" style={{ background: C.bg }}>
+      <div className="w-full max-w-[440px] rounded-2xl bg-white p-10">
+        <Link href="/">Back to site</Link>
+        <h1 className="text-2xl font-semibold mt-6 mb-4">Site Administration</h1>
+        <p className="text-sm mb-6">Use your Community Fundings account. Administrator access must be approved by the project owner; public registration is disabled.</p>
+        {err && <p role="alert" className="text-sm text-red-600 mb-4">{err}</p>}
+        {isLoaded && !isSignedIn ? (
+          <Link href="/sign-in" className="underline">Sign in to Community Fundings</Link>
+        ) : (
+          <button onClick={submit} disabled={!isLoaded || loading}
+            className="w-full rounded-xl py-3 text-white disabled:opacity-50" style={{ background: C.blue }}>
+            {loading ? "Verifying access…" : "Continue with current account"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -509,6 +400,7 @@ function Sidebar({
 /* =================================================================== */
 
 function OverviewSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -652,6 +544,7 @@ function OverviewSection({ adminId, notify }: { adminId: number; notify: (t: "su
 /* =================================================================== */
 
 function CampaignsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -756,6 +649,7 @@ function CampaignsSection({ adminId, notify }: { adminId: number; notify: (t: "s
 /* =================================================================== */
 
 function UsersSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -843,13 +737,19 @@ function UsersSection({ adminId, notify }: { adminId: number; notify: (t: "succe
 /* =================================================================== */
 
 function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [pending, setPending] = useState<any>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"pending" | "campaigns" | "comments">("pending");
+  const [rejectTarget, setRejectTarget] = useState<{ id: number; title: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectBusy, setRejectBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setQueueError(null);
     try {
       const [r1, r2] = await Promise.all([
         fetch(`${API}/api/site-admin/reports?admin_id=${adminId}`),
@@ -857,7 +757,8 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
       ]);
       if (r1.ok) setData(await r1.json());
       if (r2.ok) setPending(await r2.json());
-    } catch {} finally { setLoading(false); }
+      else { setPending(null); setQueueError("Could not load the pending approval queue. Please retry."); }
+    } catch { setPending(null); setQueueError("Could not load the pending approval queue. Please retry."); } finally { setLoading(false); }
   }, [adminId]);
 
   useEffect(() => { load(); }, [load]);
@@ -867,15 +768,19 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
     if (r.ok) { notify("success", `Approved: ${title}`); load(); }
     else { const d = await r.json().catch(() => ({})); notify("error", d.detail || "Approve failed"); }
   };
-  const rejectCampaign = async (id: number, title: string) => {
-    const reason = prompt(`Why are you rejecting "${title}"?`);
-    if (!reason) return;
+  const rejectCampaign = async () => {
+    if (!rejectTarget || rejectBusy || !rejectReason.trim()) return;
+    const { id, title } = rejectTarget;
+    setRejectBusy(true);
+    try {
     const r = await fetch(`${API}/api/site-admin/campaigns/${id}/reject?admin_id=${adminId}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: rejectReason.trim() }),
     });
-    if (r.ok) { notify("success", `Rejected: ${title}`); load(); }
+    if (r.ok) { setRejectTarget(null); setRejectReason(""); notify("success", `Rejected: ${title}`); load(); }
     else { const d = await r.json().catch(() => ({})); notify("error", d.detail || "Reject failed"); }
+    } catch { notify("error", "Could not reject campaign. Please retry."); }
+    finally { setRejectBusy(false); }
   };
 
   const delCampaign = async (id: number, title: string) => {
@@ -917,6 +822,20 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Moderation" title="Reports" subtitle="Review flagged content and pending campaigns" />
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="reject-title" className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 id="reject-title" className="text-lg font-semibold">Reject campaign</h2>
+            <p className="my-3">{rejectTarget.title}</p>
+            <label htmlFor="reject-reason">Rejection reason</label>
+            <textarea id="reject-reason" autoFocus className="mt-2 w-full rounded-lg border p-3" rows={4} value={rejectReason} disabled={rejectBusy} onChange={(e) => setRejectReason(e.target.value)} />
+            <div className="mt-4 flex justify-end gap-3">
+              <button type="button" disabled={rejectBusy} onClick={() => { setRejectTarget(null); setRejectReason(""); }}>Cancel</button>
+              <button type="button" className="rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50" disabled={rejectBusy || !rejectReason.trim()} onClick={rejectCampaign}>{rejectBusy ? "Rejecting…" : "Confirm rejection"}</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <div className="flex p-0.5 rounded-[10px] w-fit" style={{ background: "#eaeaec" }}>
         {[
@@ -941,7 +860,8 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
 
       {!loading && tab === "pending" && (
         <div className="space-y-3">
-          {pendingCount === 0 && <EmptyCard title="Nothing pending" subtitle="All campaigns have been reviewed." icon="check" />}
+          {queueError && <div role="alert"><p>{queueError}</p><Button tone="primary" onClick={load}>Retry</Button></div>}
+          {!queueError && pendingCount === 0 && <EmptyCard title="Nothing pending" subtitle="All campaigns have been reviewed." icon="check" />}
           {pending?.pending?.map((c: any) => (
             <Card key={c.campaign_id} padding="lg" className="cf-slide">
               <div className="flex items-start gap-4">
@@ -965,7 +885,7 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <Button tone="primary" onClick={() => approveCampaign(c.campaign_id, c.title)}>Approve</Button>
-                  <Button tone="danger" onClick={() => rejectCampaign(c.campaign_id, c.title)}>Reject</Button>
+                  <Button tone="danger" onClick={() => { setRejectTarget({ id: c.campaign_id, title: c.title }); setRejectReason(""); }}>Reject</Button>
                 </div>
               </div>
             </Card>
@@ -1039,6 +959,7 @@ function ReportsSection({ adminId, notify }: { adminId: number; notify: (t: "suc
 /* =================================================================== */
 
 function TransactionsSection({ adminId, notify }: { adminId: number; notify: (t: "success" | "error", m: string) => void }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -1114,6 +1035,7 @@ function TransactionsSection({ adminId, notify }: { adminId: number; notify: (t:
 /* =================================================================== */
 
 function ActivitySection({ adminId }: { adminId: number }) {
+  const fetch = useSiteAdminFetch();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 

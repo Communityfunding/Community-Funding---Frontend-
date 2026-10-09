@@ -2,11 +2,16 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  // Forward public API reads; protected endpoints retain backend authorization.
+  "/api/backend(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/sso-callback(.*)",
   "/projects-we-love(.*)",
   "/project(.*)",
+  // Guests can open the receipt shell; the backend still requires the
+  // matching Checkout session capability or an authenticated record owner.
+  "/donation-receipt",
   "/categories(.*)",
   "/about-us(.*)",
   "/how-it-works(.*)",

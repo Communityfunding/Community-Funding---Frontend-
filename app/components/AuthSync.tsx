@@ -3,28 +3,22 @@
 import { useUser } from "@clerk/nextjs";
 import { useEffect } from "react";
 import {
-  backendJwtExpired,
-  syncClerkToBackendToken,
+  ensureBackendSession,
+  clearBackendSession,
 } from "@/lib/backendToken";
 
 export default function AuthSync() {
-  const { user, isSignedIn } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
 
   useEffect(() => {
-    if (!isSignedIn || !user) return;
+    if (!isLoaded) return;
+    if (!isSignedIn || !user) { clearBackendSession(); return; }
 
     const sync = async () => {
-      const existing = localStorage.getItem("cf_backend_token");
-      const syncedEmail = localStorage.getItem("cf_synced_email");
-      const email = user.primaryEmailAddress?.emailAddress;
-      const tokenOk =
-        existing && syncedEmail === email && !backendJwtExpired(existing);
-      if (tokenOk) return;
-
-      await syncClerkToBackendToken(user);
+      await ensureBackendSession(user);
     };
     sync();
-  }, [isSignedIn, user]);
+  }, [isLoaded, isSignedIn, user]);
 
   return null;
 }

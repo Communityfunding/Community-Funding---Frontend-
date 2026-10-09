@@ -9,10 +9,15 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
     return [
       {
+        source: "/api/backend/api/:path*",
+        destination: `${backendUrl}/api/:path*`,
+      },
+      {
         source: "/api/backend/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },
