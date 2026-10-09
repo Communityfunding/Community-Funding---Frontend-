@@ -7,6 +7,7 @@ import Image from "next/image";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import { syncClerkToBackendToken } from "@/lib/backendToken";
+import { defaultBusinessUsername } from "@/lib/businessUsername";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const USERNAME_MAX_LENGTH = 30;
@@ -328,6 +329,7 @@ export default function SettingsPage() {
        method: "PUT",
        headers: { "Content-Type": "application/json" },
        body: JSON.stringify({
+         username: defaultBusinessUsername(bizClerkId),
          name: businessName,
          bio: businessBio,
          phone_number: businessPhone,

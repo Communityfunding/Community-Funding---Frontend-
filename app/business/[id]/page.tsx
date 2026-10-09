@@ -1,8 +1,10 @@
 "use client";
+import { defaultBusinessUsername } from "@/lib/businessUsername";
 
-import { useState, useEffect, useRef, ChangeEvent } from "react";
+import { useState, useEffect, useRef, useCallback, ChangeEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
+import { fetchWithClerkSession } from "@/lib/clerkSessionFetch";
 import Image from "next/image";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -178,6 +180,9 @@ function getPerms(role: string): RolePermissions {
 export default function BusinessDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user, isLoaded } = useUser();
+  const { getToken } = useAuth();
+  const fetch = useCallback((input: RequestInfo | URL, init?: RequestInit) =>
+    fetchWithClerkSession(getToken, input, init), [getToken]);
 
   const [membership, setMembership] = useState<Membership | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -454,6 +459,9 @@ export default function BusinessDashboard() {
         time_zone: settingsTimezone.trim() || null,
         avatar_url: avatarUrl,
       };
+      // Recover a newly registered business whose initial profile save failed.
+      // Preserve any existing username on successfully loaded profiles.
+      if (!bizProfile) body.username = defaultBusinessUsername(id);
       const res = await fetch(`${API_URL}/api/users/${id}`, {
         method: "PUT",
         headers: {
