@@ -37,3 +37,24 @@ test('cached native token cannot authorize a signed-out visitor',async()=>{
   assert.equal(await api.ensureBackendSession({id:'qa'}),false);
   assert.equal(storage.getItem('cf_backend_token'),null);
 });
+
+test('native route token getter renews through verified Clerk bridge',async()=>{
+  const {api,storage}=harness();
+  storage.setItem('cf_backend_token','expired-test-cache');
+  storage.setItem('cf_synced_clerk_id','qa');
+  assert.equal(await api.getVerifiedBackendToken({id:'qa'}),'backend-proof');
+  assert.equal(storage.getItem('cf_synced_clerk_id'),'qa');
+});
+
+test('native route token getter refuses mismatched live Clerk identity',async()=>{
+  const {api,storage}=harness();
+  storage.setItem('cf_backend_token','old');
+  assert.equal(await api.getVerifiedBackendToken({id:'other'}),null);
+  assert.equal(storage.getItem('cf_backend_token'),null);
+});
+
+test('native route token getter does not return late logout response',async()=>{
+  const {api,sandbox}=harness();
+  sandbox.fetch=async()=>{sandbox.window.Clerk.session=null;return {ok:true,json:async()=>({access_token:'late-test-response'})};};
+  assert.equal(await api.getVerifiedBackendToken({id:'qa'}),null);
+});

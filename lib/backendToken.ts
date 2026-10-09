@@ -38,6 +38,17 @@ export async function ensureBackendSession(user: ClerkLikeUser): Promise<boolean
   return syncClerkToBackendToken(user);
 }
 
+/** Native-JWT routes need the verified Clerk bridge, not the raw Clerk token. */
+export async function getVerifiedBackendToken(user: ClerkLikeUser): Promise<string | null> {
+  if (!await ensureBackendSession(user)) return null;
+  const clerk = (window as Window & { Clerk?: { user?: { id: string } | null; session?: unknown } }).Clerk;
+  if (!clerk?.session || clerk.user?.id !== user.id || localStorage.getItem("cf_synced_clerk_id") !== user.id) {
+    clearBackendSession();
+    return null;
+  }
+  return localStorage.getItem("cf_backend_token");
+}
+
 /** POST /api/auth/clerk-sync — stores cf_backend_token for API calls. */
 export async function syncClerkToBackendToken(user: ClerkLikeUser): Promise<boolean> {
   try {

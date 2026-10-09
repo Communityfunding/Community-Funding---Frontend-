@@ -3,8 +3,9 @@ import { defaultBusinessUsername } from "@/lib/businessUsername";
 
 import { useState, useEffect, useRef, useCallback, ChangeEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useUser, useAuth } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { fetchWithClerkSession } from "@/lib/clerkSessionFetch";
+import { getVerifiedBackendToken } from "@/lib/backendToken";
 import Image from "next/image";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -180,9 +181,8 @@ function getPerms(role: string): RolePermissions {
 export default function BusinessDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user, isLoaded } = useUser();
-  const { getToken } = useAuth();
   const fetch = useCallback((input: RequestInfo | URL, init?: RequestInit) =>
-    fetchWithClerkSession(getToken, input, init), [getToken]);
+    fetchWithClerkSession(() => user ? getVerifiedBackendToken(user) : Promise.resolve(null), input, init), [user]);
 
   const [membership, setMembership] = useState<Membership | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
