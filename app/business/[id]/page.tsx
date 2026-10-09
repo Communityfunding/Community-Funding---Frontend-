@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback, ChangeEvent } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { fetchWithClerkSession } from "@/lib/clerkSessionFetch";
-import { getVerifiedBackendToken } from "@/lib/backendToken";
+import { getVerifiedBackendToken, syncClerkToBackendToken } from "@/lib/backendToken";
 import Image from "next/image";
 import Header from "../../components/Header";
 import Footer from "../../components/Footer";
@@ -250,8 +250,13 @@ export default function BusinessDashboard() {
   useEffect(() => {
     if (!isLoaded || !user?.id) return;
     const token = localStorage.getItem("cf_backend_token");
-    fetch(`${API_URL}/api/organizations/${id}/my-role`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    // Refresh personal-account metadata as well as credentials. An unexpired
+    // legacy token alone does not prove onboarding/account type is up to date.
+    syncClerkToBackendToken(user).then((connected) => {
+      if (!connected) throw new Error("Unable to verify your account connection");
+      return fetch(`${API_URL}/api/organizations/${id}/my-role`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
     })
       .then((r) => {
         if (r.status === 403 || r.status === 404) {
